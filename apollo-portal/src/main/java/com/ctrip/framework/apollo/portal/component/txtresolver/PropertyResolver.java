@@ -132,6 +132,9 @@ public class PropertyResolver implements ConfigTextResolver {
 
     ItemDTO oldItem = keyMapOldItem.get(newKey);
 
+    if (newKey.matches("^jasypt.encryptor.password") && newValue.equals("******")){
+      newValue = oldItem.getValue();
+    }
     if (oldItem == null) {//new item
       changeSets.addCreateItem(buildNormalItem(0l, namespaceId, newKey, newValue, "", lineCounter));
     } else if (!newValue.equals(oldItem.getValue()) || lineCounter != oldItem.getLineNum()) {//update item

@@ -237,6 +237,10 @@ public class NamespaceService {
         modifiedItemCnt++;
       }
 
+      if ( itemBO.getItem().getKey().matches("^jasypt.encryptor.password")){
+        itemBO.getItem().setValue("******");
+      }
+
       itemBOs.add(itemBO);
     }
 
