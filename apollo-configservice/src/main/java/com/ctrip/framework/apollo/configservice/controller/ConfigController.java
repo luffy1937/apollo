@@ -16,6 +16,10 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.encrypt.TextEncryptor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,6 +33,8 @@ import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -37,6 +43,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/configs")
 public class ConfigController {
+  private static final Logger logger = LoggerFactory.getLogger(ConfigController.class);
   private static final Splitter X_FORWARDED_FOR_SPLITTER = Splitter.on(",").omitEmptyStrings()
       .trimResults();
   private final ConfigService configService;
@@ -44,6 +51,10 @@ public class ConfigController {
   private final NamespaceUtil namespaceUtil;
   private final InstanceConfigAuditUtil instanceConfigAuditUtil;
   private final Gson gson;
+  @Autowired(required = false)
+  private TextEncryptor textEncryptor;
+  private String pattern = "\\{cipher\\}\\w+";
+  private Pattern p = Pattern.compile(pattern);
 
   private static final Type configurationTypeReference = new TypeToken<Map<String, String>>() {
       }.getType();
@@ -129,7 +140,31 @@ public class ConfigController {
 
     ApolloConfig apolloConfig = new ApolloConfig(appId, appClusterNameLoaded, originalNamespace,
         mergedReleaseKey);
-    apolloConfig.setConfigurations(mergeReleaseConfigurations(releases));
+
+    Map<String, String> configurations = mergeReleaseConfigurations(releases);
+    if(textEncryptor != null){
+      for(String key: configurations.keySet()){
+        if(configurations.get(key).contains("{cipher}")){
+          String value = configurations.get(key);
+          Matcher m = p.matcher(value);
+          while (m.find()){
+            String cipherString = m.group();
+            String clearString;
+            try {
+              clearString = cipherString.substring("{cipher}".length());
+              clearString = textEncryptor.decrypt(clearString);
+              value = value.replace(cipherString, clearString);
+            }catch (Exception e){
+              logger.error(String.join("-", appId, clusterName, namespace, key, "cannot decrypted please check"), e);
+              //value = value.replace(cipherString, "Cannot_Decrypted_Please_Check");
+            }
+          }
+          configurations.put(key, value);
+        }
+      }
+    }
+
+    apolloConfig.setConfigurations(configurations);
 
     Tracer.logEvent("Apollo.Config.Found", assembleKey(appId, appClusterNameLoaded,
         originalNamespace, dataCenter));
